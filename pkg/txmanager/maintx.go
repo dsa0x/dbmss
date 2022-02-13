@@ -1,6 +1,7 @@
 package txmanager
 
 import (
+	"math/rand"
 	"sync"
 	"time"
 )
@@ -222,21 +223,24 @@ func main4() {
 		Operation{
 			OpType: Read,
 			Key:    "A",
+			TxnID:  "1",
 		},
 		Operation{
 			OpType: Write,
 			Key:    "A",
 			Val:    900,
+			TxnID:  "1",
+			Last:   true,
 		},
 		Operation{
 			OpType: Read,
 			Key:    "B",
 		},
-		Operation{
-			OpType: Write,
-			Key:    "B",
-			Val:    1100,
-		},
+		// Operation{
+		// 	OpType: Write,
+		// 	Key:    "B",
+		// 	Val:    1100,
+		// },
 	)
 
 	txn2 := Transaction{
@@ -247,15 +251,19 @@ func main4() {
 		Operation{
 			OpType: Read,
 			Key:    "B",
+			TxnID:  "2",
 		},
 		Operation{
 			OpType: Write,
 			Key:    "B",
 			Val:    1100,
+			TxnID:  "2",
 		},
 		Operation{
 			OpType: Read,
 			Key:    "A",
+			TxnID:  "2",
+			Last:   true,
 		},
 	)
 
@@ -263,14 +271,40 @@ func main4() {
 	tp.Init()
 	tp.AddTxn(txn1, txn2)
 
+	ch := make(chan Operation)
+
 	for i := 0; i < tp.TxnLen(); i++ {
-		wg.Add(1)
-		go func(idx int) {
-			txn := tp.GetTxn(idx)
-			tp.StartTransaction(txn)
-			wg.Done()
-		}(i)
-		// time.Sleep(time.Millisecond * 5)
+		txn := tp.GetTxn(i)
+		wg.Add(len(txn.Ops))
+		go func() {
+			tp.AckLock(txn)
+			tp.Transaction(txn, ch, wg)
+		}()
 	}
+
+	go func() {
+		// for {
+		// 	select {
+		// 	case op := <-ch:
+		// 		tp.Operator(op)
+		// 		wg.Done()
+		// 	case <-time.After(time.Duration(time.Millisecond * 1000)):
+		// 		fmt.Println("sdf")
+		// 		wg.Done()
+		// 	}
+		// }
+		for op := range ch {
+			tp.Operator(op)
+			time.Sleep(time.Millisecond * time.Duration(100*rand.Float32()))
+			wg.Done()
+		}
+	}()
+
 	wg.Wait()
+	// for i := 0; i < 2; i++ {
+	// 	op := <-ch
+	// 	fmt.Println(time.Duration(1000*rand.Float32()), op)
+	// 	tp.Operator(op, "1")
+	// 	// time.Sleep(time.Millisecond * time.Duration(1000*rand.Float32()))
+	// }
 }

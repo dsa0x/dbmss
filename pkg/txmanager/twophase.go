@@ -206,3 +206,60 @@ func (tp *TwoPhase) Snapshot(txnID string) {
 	str += "}\n"
 	fmt.Printf("Txn %s: %s", txnID, str)
 }
+
+func (tp *TwoPhase) Transaction(txn Transaction, ch chan Operation, wg sync.WaitGroup) {
+	for _, op := range txn.Ops {
+		ch <- op
+	}
+}
+
+func (tp *TwoPhase) AckLock(txn Transaction) {
+	fmt.Printf("Starting transaction %s:\n", txn.Id)
+	lockers := Lock{
+		r: make(map[string]*sync.RWMutex),
+		w: make(map[string]*sync.Mutex),
+	}
+	// tp.locklm.Lock()
+	for _, op := range txn.Ops {
+		mu, ok := tp.lm.Load(op.Key)
+		if !ok {
+			panic("no key")
+		}
+		if op.OpType == Read {
+			lockers.r[op.Key] = mu.(TupleLock).r
+			lockers.r[op.Key].Lock()
+			fmt.Println("acquiring rlock", op.Key, op.TxnID)
+		} else {
+			lockers.w[op.Key] = mu.(TupleLock).w
+			lockers.w[op.Key].Lock()
+			fmt.Println("acquiring wlock", op.Key, op.TxnID)
+		}
+	}
+	// tp.locklm.Unlock()
+}
+
+func (tp *TwoPhase) Operator(op Operation) {
+	mu, ok := tp.lm.Load(op.Key)
+	if !ok {
+		panic("no key")
+	}
+	tuple := tp.db[op.Key]
+	if op.OpType == Write {
+		tuple.val = op.Val
+	}
+	fmt.Printf("Txns %s:%s %s: %d\n", op.TxnID, op.OpType, op.Key, tuple.val)
+
+	// shrinking phase
+
+	if op.OpType == Read {
+		lock := mu.(TupleLock).r
+		lock.Unlock()
+	} else {
+		lock := mu.(TupleLock).w
+		lock.Unlock()
+	}
+
+	if op.Last {
+		tp.Snapshot(op.TxnID)
+	}
+}

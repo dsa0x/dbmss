@@ -18,4 +18,6 @@ type Operation struct {
 	OpType   OpType
 	Key      string
 	Val      int
+	TxnID    string
+	Last     bool
 }
